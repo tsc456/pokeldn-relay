@@ -68,14 +68,77 @@ be reachable at the other house's Tailscale IP. We did not try it over a plain p
 connection; it should work identically over a different VPN, SSH port-forward, etc. as long as both
 processes can open one TCP connection to each other, but Tailscale is what we validated in practice.
 
-### Running it
+### Setup
 
-Both houses need:
-1. A working [pokeldn](https://github.com/Decryptu/pokeldn) checkout, set up per its own README
-   (venv, `vendor/LDN`, `prod.keys` installed, etc.).
-2. This repo's `bin/relay_host.py` and `bin/relay_join.py` copied into pokeldn's own `bin/` directory,
-   and this repo's `pokeldn/relay/` copied into pokeldn's own `pokeldn/` package directory.
-3. Tailscale (or any other mechanism that gives the two houses a routable IP to each other) running.
+Do this on **both** houses' machines. This is the exact sequence we used, not a generic pointer to
+pokeldn's own README — pokeldn's setup instructions assume NetworkManager, which may not be what your
+box actually uses (ours didn't; see step 4).
+
+1. **Clone pokeldn and pin the commit this relay was built against:**
+
+   ```bash
+   git clone https://github.com/Decryptu/pokeldn.git
+   cd pokeldn
+   git checkout c8ffab9d3016d7a2adc4c89d3c9841772c607a99
+   ```
+
+2. **Venv and dependencies** (this also pulls in pokeldn's vendored, Realtek/rtw88-patched LDN
+   library from `vendor/LDN` — don't substitute the plain PyPI `ldn` package, it lacks those fixes):
+
+   ```bash
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt
+   ```
+
+3. **Drop this relay's files in**, from a checkout of this repo:
+
+   ```bash
+   cp /path/to/pokeldn-relay/bin/relay_host.py /path/to/pokeldn-relay/bin/relay_join.py pokeldn/bin/
+   cp -r /path/to/pokeldn-relay/pokeldn/relay pokeldn/pokeldn/
+   ```
+
+4. **`nmcli` shim, if you don't run NetworkManager.** pokeldn's `free_radio()` helper shells out to
+   `nmcli device set <iface> managed no` before every join/host attempt. If your box manages Wi-Fi
+   some other way (we used netplan + systemd-networkd on both machines, no NetworkManager daemon at
+   all), that command doesn't exist and every run fails. Since there's no NetworkManager to actually
+   unmanage anything from, a no-op shim is safe:
+
+   ```bash
+   sudo bash -c 'cat > /usr/local/bin/nmcli << "EOF"
+   #!/bin/sh
+   exit 0
+   EOF'
+   sudo chmod +x /usr/local/bin/nmcli
+   ```
+
+   Verify it isn't empty (`cat /usr/local/bin/nmcli`) before relying on it — a shim written through a
+   multi-stage pipe can silently end up 0 bytes and fail as `Exec format error` the first time
+   something tries to run it. If you *do* run NetworkManager, skip this and instead follow pokeldn's
+   own README section on excluding the LDN interfaces from it.
+
+5. **Install `prod.keys`** at `~/.switch/prod.keys` (the default path both scripts expect, overridable
+   with `--keys`), with tight permissions — this is Switch key material:
+
+   ```bash
+   mkdir -p ~/.switch && chmod 700 ~/.switch
+   cp /path/to/your/prod.keys ~/.switch/prod.keys
+   chmod 600 ~/.switch/prod.keys
+   ```
+
+   This repo does not provide `prod.keys` and never will; see pokeldn's own README for what it is and
+   why it's required (FireRed/LeafGreen's LDN advertisement is AES-GCM encrypted under a Switch master
+   key). `master_key_XX` values are shared across every console on a given firmware — the key doesn't
+   have to come from the specific console you're playing on, but sourcing one is entirely on you.
+
+6. **Confirm you can see your own radio:** `iw dev` should list your Wi-Fi adapter(s) with their
+   current `phy#N` numbers. **These renumber across reboots** — always re-check with `iw dev` before
+   picking a `--phy` value, never hardcode one from a previous session. Both relay roles need root
+   (raw `nl80211`/monitor-mode operations), so everything below runs under `sudo -E`.
+
+7. **Tailscale** (or any other mechanism that gives the two houses a routable IP to each other, and a
+   mutually reachable TCP port) running on both machines.
+
+### Running it
 
 In the house whose Switch will **join for real**, start the listener first:
 
