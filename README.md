@@ -12,6 +12,12 @@ one per house, each pretend to be the other player's real console, and shuttle t
 between two genuine physical Switches over a TCP tunnel. Neither console needs any modification,
 homebrew, or awareness that it isn't on the same Wi-Fi network as the other.
 
+Built and tested against pokeldn at commit
+[`c8ffab9`](https://github.com/Decryptu/pokeldn/commit/c8ffab9d3016d7a2adc4c89d3c9841772c607a99)
+(2026-09-21). pokeldn's own internal APIs are not guaranteed stable across commits; if something
+breaks against a newer checkout, try pinning that commit first before assuming this relay is at
+fault.
+
 ## How it works
 
 ```
